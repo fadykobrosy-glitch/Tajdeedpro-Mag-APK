@@ -2,7 +2,7 @@ name: tajdeed_pro_mag
 description: A clean, minimalist Flutter WebView app for Tajdeed Pro Magazine.
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.1+2
 
 environment:
   sdk: '>=3.5.0 <4.0.0'

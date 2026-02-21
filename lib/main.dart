@@ -249,67 +249,45 @@ class _WebViewScreenState extends State<WebViewScreen> {
           },
           onWebResourceError: (WebResourceError error) {},
           onNavigationRequest: (NavigationRequest request) async {
-            final url = request.url.toLowerCase();
-            
-            // Handle Facebook URLs with multiple fallbacks
-            if (url.contains('facebook.com') || 
-                url.contains('fb.me') ||
-                url.startsWith('fb://') ||
-                url.startsWith('intent://facebook.com') ||
-                url.startsWith('intent://www.facebook.com')) {
+            final url = request.url; // شلنا الـ toLowerCase عشان ما يخرب الروابط الحساسة
+
+            // معالجة روابط فيسبوك حصراً
+            if (url.contains('facebook.com') || url.contains('fb.me') || url.startsWith('intent://')) {
               
-              // Try multiple Facebook app schemes
-              final facebookSchemes = [
-                'fb://facewebmodal/f?href=${Uri.encodeComponent(request.url)}',
-                'fb://profile/',
-                'fb://page/',
-                'fb://group/',
-                'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(request.url)}'
-              ];
-              
-              bool launched = false;
-              for (final scheme in facebookSchemes) {
-                try {
-                  final uri = Uri.parse(scheme);
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(
-                      uri,
-                      mode: LaunchMode.externalApplication,
-                    );
-                    launched = true;
-                    break;
-                  }
-                } catch (e) {
-                  continue;
+              String finalUrl = url;
+
+              // إذا كان الرابط هو الـ Intent اللي بعتلي ياه، منفك تشفيره فوراً
+              if (url.startsWith('intent://')) {
+                RegExp regExp = RegExp(r'intent://([\s\S]*?)#Intent');
+                var match = regExp.firstMatch(url);
+                if (match != null) {
+                  finalUrl = "https://" + match.group(1)!;
                 }
               }
+
+              // السر هون: فتح الرابط بمتصفح خارجي نظامي بيعرف يتعامل مع تطبيق فيسبوك
+              await launchUrl(
+                Uri.parse(finalUrl),
+                mode: LaunchMode.externalApplication,
+              );
               
-              // Fallback to browser if all schemes fail
-              if (!launched) {
-                await _launchExternalURL(request.url);
-              }
-              
+              return NavigationDecision.prevent; // منع الـ WebView من فتح "الطبقة البيضاء"
+            }
+
+            // معالجة الواتساب والاتصال
+            if (url.contains('api.whatsapp.com') || url.contains('wa.me') || url.startsWith('tel:')) {
+              await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
               return NavigationDecision.prevent;
             }
-            
-            if (url.contains('api.whatsapp.com') || 
-                url.contains('wa.me')) {
-              _launchExternalURL(request.url);
-              return NavigationDecision.prevent;
+
+            // السماح بتصفح المدونة فقط داخل التطبيق
+            if (url.contains('tajdeedpro.blogspot.com')) {
+              return NavigationDecision.navigate;
             }
-            
-            if (url.startsWith('tel:')) {
-              _launchExternalURL(request.url);
-              return NavigationDecision.prevent;
-            }
-            
-            // Open non-blog URLs in system browser
-            if (!url.contains('tajdeedpro.blogspot.com')) {
-              _launchExternalURL(request.url);
-              return NavigationDecision.prevent;
-            }
-            
-            return NavigationDecision.navigate;
+
+            // أي رابط خارجي تاني يفتحه بره
+            await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+            return NavigationDecision.prevent;
           },
         ),
       )
