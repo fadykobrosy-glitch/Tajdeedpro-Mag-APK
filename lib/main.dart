@@ -233,6 +233,14 @@ class _WebViewScreenState extends State<WebViewScreen> {
               }, true);
             `;
             _controller.runJavaScript(script);
+            
+            // Hide scrollbars on the website side
+            const scrollbarStyle = `
+              const style = document.createElement('style');
+              style.innerHTML = '::-webkit-scrollbar { display: none; } body { -ms-overflow-style: none; scrollbar-width: none; }';
+              document.head.appendChild(style);
+            `;
+            _controller.runJavaScript(scrollbarStyle);
           },
           onWebResourceError: (WebResourceError error) {},
           onNavigationRequest: (NavigationRequest request) async {
