@@ -1,0 +1,48 @@
+name: Build Release APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        
+    - name: Clean environment
+      run: flutter clean
+      
+    - name: Get Flutter dependencies
+      run: flutter pub get
+      
+    - name: Generate app icons
+      run: flutter pub run flutter_launcher_icons:main
+      
+    - name: Build Release APK
+      run: flutter build apk --release
+      
+    - name: Rename APK
+      run: mv build/app/outputs/flutter-apk/app-release.apk build/app/outputs/flutter-apk/tajdeedpro-mag.apk
+      
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: tajdeedpro-mag-apk.zip  # هون السر! ضيف اللاحقة للاسم نفسه
+        path: build/app/outputs/flutter-apk/tajdeedpro-mag.apk
+        if-no-files-found: error
