@@ -215,32 +215,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
               _isLoading = false;
             });
             
-            // Inject JavaScript to enable website share buttons
-            const script = `
-              window.navigator.share = function(data) {
-                const title = data.title || document.title || 'تجديد';
-                const url = data.url || window.location.href;
-                FlutterShare.postMessage(title + '|' + url);
-                return Promise.resolve();
-              };
-              document.addEventListener('click', function(e) {
-                let target = e.target.closest('a, button');
-                if (target && (target.href?.includes('share') || target.className?.includes('share'))) {
-                  const url = window.location.href;
-                  const title = document.title;
-                  FlutterShare.postMessage(title + '|' + url);
-                }
-              }, true);
-            `;
-            _controller.runJavaScript(script);
-            
-            // Hide scrollbars on the website side
-            const scrollbarStyle = `
-              const style = document.createElement('style');
-              style.innerHTML = '::-webkit-scrollbar { display: none; } body { -ms-overflow-style: none; scrollbar-width: none; }';
-              document.head.appendChild(style);
-            `;
-            _controller.runJavaScript(scrollbarStyle);
+            _onPageFinished(url);
           },
           onWebResourceError: (WebResourceError error) {},
           onNavigationRequest: (NavigationRequest request) async {
@@ -340,6 +315,36 @@ class _WebViewScreenState extends State<WebViewScreen> {
     } catch (e) {
       debugPrint("Share Error: $e");
     }
+  }
+
+  void _onPageFinished(String url) {
+    // إخفاء السكرول بار وحقن جسر المشاركة
+    _controller.runJavaScript('''
+      (function() {
+        // 1. إخفاء السكرول بار
+        const style = document.createElement('style');
+        style.innerHTML = '::-webkit-scrollbar { display: none; }';
+        document.head.appendChild(style);
+
+        // 2. جسر المشاركة
+        window.navigator.share = function(data) {
+          const title = data.title || document.title || 'تجديد';
+          const url = data.url || window.location.href;
+          FlutterShare.postMessage(title + '|' + url);
+          return Promise.resolve();
+        };
+
+        // 3. صيد أزرار المشاركة اليدوية
+        document.addEventListener('click', function(e) {
+          let target = e.target.closest('a, button');
+          if (target && (target.innerText.includes('مشاركة') || target.innerHTML.includes('share'))) {
+            const url = window.location.href;
+            const title = document.title;
+            FlutterShare.postMessage(title + '|' + url);
+          }
+        });
+      })();
+    ''');
   }
 
   Future<void> _refreshWebView() async {
