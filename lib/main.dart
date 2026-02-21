@@ -245,7 +245,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
               _isLoading = false;
             });
             
-            _onPageFinished(url);
+            _injectCustomStyles();
           },
           onWebResourceError: (WebResourceError error) {},
           onNavigationRequest: (NavigationRequest request) async {
@@ -325,37 +325,36 @@ class _WebViewScreenState extends State<WebViewScreen> {
     }
   }
 
-  void _onPageFinished(String url) {
+  void _injectCustomStyles() {
     _controller.runJavaScript('''
       (function() {
-        // 1. إخفاء السكرول بار
-        const style = document.createElement('style');
-        style.innerHTML = '::-webkit-scrollbar { display: none; }';
-        document.head.appendChild(style);
-
-        // 2. تعديل جسر المشاركة لمنع التكرار
-        window.navigator.share = function(data) {
-          const title = data.title || document.title || 'تجديد';
-          const url = data.url || window.location.href;
-          // نبعث البيانات لفلاتر فقط
-          FlutterShare.postMessage(title + '|' + url);
-          // نرجع Promise ناجح بس فاضي عشان الموقع ما يكمل تنفيذ الشير تبعه
-          return Promise.resolve();
-        };
-
-        // 3. صيد أزرار المشاركة ومنع الحدث الأصلي
+        // 1. استهداف أزرار المشاركة في البطاقات والمودال
         document.addEventListener('click', function(e) {
-          let target = e.target.closest('a, button');
-          if (target && (target.innerText.includes('مشاركة') || target.innerHTML.includes('share'))) {
-            // هون السر: نوقف أي أكشن تاني للموقع
-            e.preventDefault();
-            e.stopPropagation();
+          // البحث عن أقرب عنصر 'a' (رابط) تم الضغط عليه أو على محتواه
+          var anchor = e.target.closest('a');
+          
+          if (anchor) {
+            var href = anchor.getAttribute('href') || "";
             
-            const url = window.location.href;
-            const title = document.title;
-            FlutterShare.postMessage(title + '|' + url);
+            // إذا كان الرابط هو رابط مشاركة (فيسبوك أو واتساب)
+            if (href.includes('facebook.com/share') || href.includes('api.whatsapp.com/send')) {
+              e.preventDefault(); // منع المتصفح من فتحه بشكل افتراضي
+              
+              var title = document.title;
+              // إرسال الرابط المقصود "بالذات" لتطبيق فلاتر
+              FlutterShare.postMessage(title + "|" + href);
+              return false;
+            }
           }
-        }, true); // استخدمنا true عشان نصيد الضغطة قبل الكل
+        }, true);
+
+        // 2. إخفاء العناصر غير المرغوبة (تنسيق الصفحة)
+        var style = document.createElement('style');
+        style.innerHTML = `
+          .header-widget, .footer-wrapper, .sidebar-wrapper { display: none !important; }
+          #send-to-messenger-button { display: none !important; }
+        `;
+        document.head.appendChild(style);
       })();
     ''');
   }
