@@ -318,7 +318,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
   }
 
   void _onPageFinished(String url) {
-    // إخفاء السكرول بار وحقن جسر المشاركة
     _controller.runJavaScript('''
       (function() {
         // 1. إخفاء السكرول بار
@@ -326,23 +325,29 @@ class _WebViewScreenState extends State<WebViewScreen> {
         style.innerHTML = '::-webkit-scrollbar { display: none; }';
         document.head.appendChild(style);
 
-        // 2. جسر المشاركة
+        // 2. تعديل جسر المشاركة لمنع التكرار
         window.navigator.share = function(data) {
           const title = data.title || document.title || 'تجديد';
           const url = data.url || window.location.href;
+          // نبعث البيانات لفلاتر فقط
           FlutterShare.postMessage(title + '|' + url);
+          // نرجع Promise ناجح بس فاضي عشان الموقع ما يكمل تنفيذ الشير تبعه
           return Promise.resolve();
         };
 
-        // 3. صيد أزرار المشاركة اليدوية
+        // 3. صيد أزرار المشاركة ومنع الحدث الأصلي
         document.addEventListener('click', function(e) {
           let target = e.target.closest('a, button');
           if (target && (target.innerText.includes('مشاركة') || target.innerHTML.includes('share'))) {
+            // هون السر: نوقف أي أكشن تاني للموقع
+            e.preventDefault();
+            e.stopPropagation();
+            
             const url = window.location.href;
             const title = document.title;
             FlutterShare.postMessage(title + '|' + url);
           }
-        });
+        }, true); // استخدمنا true عشان نصيد الضغطة قبل الكل
       })();
     ''');
   }
