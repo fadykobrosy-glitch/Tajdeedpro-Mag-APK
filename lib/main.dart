@@ -186,8 +186,25 @@ class _WebViewScreenState extends State<WebViewScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..addJavaScriptChannel(
         'FlutterShare',
-        onMessageReceived: (JavaScriptMessage message) {
-          _handleWebShare(message.message);
+        onMessageReceived: (JavaScriptMessage message) async {
+          final parts = message.message.split('|');
+          if (parts.length >= 2) {
+            String title = parts[0];
+            String url = parts[1];
+
+            // إذا كان الرابط لفيسبوك، بنحاول نفتحه بالتطبيق
+            if (url.contains('facebook.com')) {
+               final Uri _url = Uri.parse(url);
+               // mode: LaunchMode.externalApplication هو السر لفتح التطبيق الأصلي
+               if (!await launchUrl(_url, mode: LaunchMode.externalApplication)) {
+                 // إذا ما فتح التطبيق، بنعمل شير عادي كخطة بديلة
+                 await Share.share('$title \n $url');
+               }
+            } else {
+              // لأي رابط تاني، خلي الشير العادي شغال
+              await Share.share('$title \n $url');
+            }
+          }
         },
       )
       // Hide scrollbar without breaking pull-to-refresh
