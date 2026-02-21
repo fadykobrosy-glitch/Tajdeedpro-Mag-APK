@@ -189,20 +189,33 @@ class _WebViewScreenState extends State<WebViewScreen> {
         onMessageReceived: (JavaScriptMessage message) async {
           final parts = message.message.split('|');
           if (parts.length >= 2) {
-            String title = parts[0];
             String url = parts[1];
 
-            // إذا كان الرابط لفيسبوك، بنحاول نفتحه بالتطبيق
             if (url.contains('facebook.com')) {
-               final Uri _url = Uri.parse(url);
-               // mode: LaunchMode.externalApplication هو السر لفتح التطبيق الأصلي
-               if (!await launchUrl(_url, mode: LaunchMode.externalApplication)) {
-                 // إذا ما فتح التطبيق، بنعمل شير عادي كخطة بديلة
-                 await Share.share('$title \n $url');
-               }
+              // 1. تحويل الرابط لـ Scheme بيفهمه تطبيق فيسبوك (fb://facewebmodal/f?href=)
+              // هاد الـ Scheme بيجبر الموبايل يفتح التطبيق على رابط معين فوراً
+              final String fbScheme = "fb://facewebmodal/f?href=$url";
+              final Uri fbUri = Uri.parse(fbScheme);
+              final Uri webUri = Uri.parse(url);
+
+              try {
+                // 2. محاولة فتح التطبيق مباشرة (مثل الواتساب)
+                bool launched = await launchUrl(
+                  fbUri,
+                  mode: LaunchMode.externalNonBrowserApplication,
+                );
+
+                // 3. إذا ما فتح (مثلاً التطبيق مو مثبت)، منفتحه بالمتصفح العادي كخيار أخير
+                if (!launched) {
+                  await launchUrl(webUri, mode: LaunchMode.externalApplication);
+                }
+              } catch (e) {
+                // إذا انضربت القصة كلها، منفتح قائمة الشير العادية
+                await Share.share(url);
+              }
             } else {
-              // لأي رابط تاني، خلي الشير العادي شغال
-              await Share.share('$title \n $url');
+              // الروابط العادية (واتساب وغيره) بتبقى متل ما هي لأنها شغالة تمام
+              await Share.share(url);
             }
           }
         },
