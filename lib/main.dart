@@ -187,46 +187,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
       ..addJavaScriptChannel(
         'FlutterShare',
         onMessageReceived: (JavaScriptMessage message) async {
-          final parts = message.message.split('|');
-          if (parts.length >= 2) {
-            String url = parts[1];
-
-            if (url.contains('facebook.com')) {
-              // 1. تحويل الرابط لـ Scheme بيفهمه تطبيق فيسبوك (fb://facewebmodal/f?href=)
-              // هاد الـ Scheme بيجبر الموبايل يفتح التطبيق على رابط معين فوراً
-              final String fbScheme = "fb://facewebmodal/f?href=$url";
-              final Uri fbUri = Uri.parse(fbScheme);
-              final Uri webUri = Uri.parse(url);
-
-              try {
-                // 2. محاولة فتح التطبيق مباشرة (مثل الواتساب)
-                bool launched = await launchUrl(
-                  fbUri,
-                  mode: LaunchMode.externalNonBrowserApplication,
-                );
-
-                // 3. إذا ما فتح (مثلاً التطبيق مو مثبت)، منفتحه بالمتصفح العادي كخيار أخير
-                if (!launched) {
-                  await launchUrl(webUri, mode: LaunchMode.externalApplication);
-                }
-              } catch (e) {
-                // إذا انضربت القصة كلها، منفتح قائمة الشير العادية
-                await Share.share(url);
-              }
-            } else {
-              // الروابط العادية (واتساب وغيره) بتبقى متل ما هي لأنها شغالة تمام
-              await Share.share(url);
-            }
-          }
+          await _handleWebShare(message.message);
         },
       )
-      // Hide scrollbar without breaking pull-to-refresh
-      ..runJavaScript('''
-        // Hide scrollbar but keep scrolling functionality and pull-to-refresh
-        const style = document.createElement('style');
-        style.innerHTML = '\n          ::-webkit-scrollbar {\n            display: none !important;\n          }\n          * {\n            scrollbar-width: none !important;\n            -ms-overflow-style: none !important;\n          }\n        ';
-        document.head.appendChild(style);
-      ''')
       ..setNavigationDelegate(
         NavigationDelegate(
           onProgress: (int progress) {
@@ -351,6 +314,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
         // 2. إخفاء العناصر غير المرغوبة (تنسيق الصفحة)
         var style = document.createElement('style');
         style.innerHTML = `
+          * { -webkit-scrollbar { display: none !important; } scrollbar-width: none !important; -ms-overflow-style: none !important; }
           .header-widget, .footer-wrapper, .sidebar-wrapper { display: none !important; }
           #send-to-messenger-button { display: none !important; }
         `;
