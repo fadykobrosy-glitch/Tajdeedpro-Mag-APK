@@ -270,7 +270,40 @@ class _WebViewScreenState extends State<WebViewScreen> {
   void _injectCustomStyles() {
     _controller.runJavaScript('''
       (function() {
-        // 1. Dedicated Native Share Channel for .footer-btn.share-btn
+        // 1. Featured Ad Card Navigation - Handle card clicks
+        document.addEventListener('click', function(e) {
+          var cardLink = e.target.closest('.featured-ad-card-link');
+          if (cardLink) {
+            // Skip if share icon was clicked (handled separately)
+            if (e.target.closest('.share-icon, .share-btn, [class*="share"]')) return;
+            
+            e.preventDefault();
+            var href = cardLink.getAttribute('href') || "";
+            if (href) {
+              // Force WebView to load the URL to prevent ?m=1 reset
+              window.location.href = href;
+            }
+            return false;
+          }
+        }, true);
+
+        // 2. Share Icon Listener - Handle share clicks with stopPropagation
+        document.addEventListener('click', function(e) {
+          var shareIcon = e.target.closest('.share-icon, .share-btn, [class*="share"]');
+          if (shareIcon) {
+            e.preventDefault();
+            e.stopPropagation(); // Prevent card navigation
+            
+            var href = shareIcon.getAttribute('href') || "";
+            var title = document.title;
+            var specificUrl = href || window.location.href;
+            
+            NativeShareChannel.postMessage(title + "|" + specificUrl);
+            return false;
+          }
+        }, true);
+
+        // 3. Footer Share Button Listener (existing functionality)
         document.addEventListener('click', function(e) {
           var shareBtn = e.target.closest('.footer-btn.share-btn');
           if (shareBtn) {
@@ -286,11 +319,20 @@ class _WebViewScreenState extends State<WebViewScreen> {
           }
         }, true);
 
-        // 2. Scroll fix and UI cleanup
+        // 4. Scroll fix and UI cleanup
         var style = document.createElement('style');
         style.innerHTML = `
-          html, body { overflow: hidden !important; }
-          * { -webkit-scrollbar: { display: none !important; } scrollbar-width: none !important; -ms-overflow-style: none !important; }
+          /* Hide scrollbar for Chrome, Safari and Opera */
+          ::-webkit-scrollbar {
+            display: none !important;
+          }
+          /* Hide scrollbar for IE, Edge and Firefox */
+          html, body {
+            -ms-overflow-style: none !important;  /* IE and Edge */
+            scrollbar-width: none !important;  /* Firefox */
+            overflow-y: scroll !important; /* Force scrolling capability */
+            -webkit-overflow-scrolling: touch !important; /* Smooth scrolling for mobile */
+          }
           .header-widget, .footer-wrapper, .sidebar-wrapper { display: none !important; }
           #send-to-messenger-button { display: none !important; }
         `;
