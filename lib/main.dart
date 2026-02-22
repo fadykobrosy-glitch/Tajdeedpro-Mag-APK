@@ -220,7 +220,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
           },
           onPageFinished: (String url) {
             _controller.runJavaScript('''
-              // 1. تنظيف السكرول والواجهة
+              // 1. تنظيف الواجهة (بضل متل ما هو)
               var style = document.createElement('style');
               style.innerHTML = `
                 ::-webkit-scrollbar { display: none !important; }
@@ -229,29 +229,35 @@ class _WebViewScreenState extends State<WebViewScreen> {
               `;
               document.head.appendChild(style);
 
-              // 2. وظيفة استخراج الرابط الذكية (للبطاقة والمودال)
+              // 2. وظيفة استخراج الرابط "الجراحية" (للمقالات النصية والمودال حصراً)
               function getLink(element) {
-                // البحث في البطاقة (حتى لو بدون صورة)
-                var card = element.closest('.article-card');
-                if (card && card.getAttribute('data-post-url')) {
-                  return card.getAttribute('data-post-url');
+                // أ- محاولة جلب الرابط الأساسي (للمقالات العادية الشغالة)
+                var parentCard = element.closest('.article-card');
+                var dataUrl = parentCard ? parentCard.getAttribute('data-post-url') : null;
+                if (dataUrl) return dataUrl;
+
+                // ب- إذا فشل وكان المقال نصي (.no-image)
+                if (parentCard && parentCard.classList.contains('no-image')) {
+                  var textLink = parentCard.querySelector('h2 a, h3 a, a[href*=".html"]');
+                  if (textLink) return textLink.href;
                 }
-                // البحث في المودال
+
+                // ج- إذا كنا جوا مودال (نصي أو عادي)
                 var modal = document.getElementById('articleModal');
                 if (modal && modal.style.display !== 'none') {
-                  return modal.getAttribute('data-current-url') || window.location.href;
+                  // البحث عن رابط المقال الكامل داخل المودال
+                  var modalLink = modal.getAttribute('data-current-url') || 
+                                  modal.querySelector('a[href*=".html"], a.read-more')?.href;
+                  if (modalLink) return modalLink;
                 }
-                // البحث عن أول رابط داخل البطاقة
-                if (card) {
-                  var link = card.querySelector('a');
-                  if (link) return link.href;
-                }
+
+                // د- الملاذ الأخير
                 return window.location.href;
               }
 
-              // 3. التنصت على أي نقرة مشاركة (رئيسية أو مودال)
+              // 3. التنصت على أي نقرة مشاركة
               document.addEventListener('click', function(e) {
-                var btn = e.target.closest('.share-btn');
+                var btn = e.target.closest('.footer-btn.share-btn');
                 if (btn) {
                   e.preventDefault();
                   e.stopPropagation();
