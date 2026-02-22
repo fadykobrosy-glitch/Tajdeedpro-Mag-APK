@@ -280,8 +280,33 @@ class _WebViewScreenState extends State<WebViewScreen> {
       } else {
         urlToShare = message;
       }
+      
       if (urlToShare.isNotEmpty) {
-        await Share.share('$title\n$urlToShare', subject: title);
+        // Check if it's a Facebook URL and handle with deep linking
+        if (urlToShare.contains('facebook.com')) {
+          final String fbScheme = "fb://facewebmodal/f?href=$urlToShare";
+          final Uri fbUri = Uri.parse(fbScheme);
+          final Uri webUri = Uri.parse(urlToShare);
+
+          try {
+            // Try to open Facebook app with deep link
+            bool launched = await launchUrl(
+              fbUri,
+              mode: LaunchMode.externalNonBrowserApplication,
+            );
+
+            // Fallback to browser if Facebook app not installed
+            if (!launched) {
+              await launchUrl(webUri, mode: LaunchMode.externalApplication);
+            }
+          } catch (e) {
+            // Final fallback to native share
+            await Share.share('$title\n$urlToShare', subject: title);
+          }
+        } else {
+          // For non-Facebook URLs, use native share
+          await Share.share('$title\n$urlToShare', subject: title);
+        }
       }
     } catch (e) {
       debugPrint("Share Error: $e");
@@ -291,27 +316,48 @@ class _WebViewScreenState extends State<WebViewScreen> {
   void _injectCustomStyles() {
     _controller.runJavaScript('''
       (function() {
-        // 1. استهداف أزرار المشاركة في البطاقات والمودال
+        // 1. Override navigator.share for all share scenarios
+        window.navigator.share = function(data) {
+          const title = data.title || document.title || 'تجديد';
+          const url = data.url || window.location.href;
+          FlutterShare.postMessage(title + '|' + url);
+          return Promise.resolve();
+        };
+
+        // 2. Enhanced click detection for all share button types
         document.addEventListener('click', function(e) {
-          // البحث عن أقرب عنصر 'a' (رابط) تم الضغط عليه أو على محتواه
           var anchor = e.target.closest('a');
+          var button = e.target.closest('button');
           
+          // Handle anchor links with share URLs
           if (anchor) {
             var href = anchor.getAttribute('href') || "";
-            
-            // إذا كان الرابط هو رابط مشاركة (فيسبوك أو واتساب)
-            if (href.includes('facebook.com/share') || href.includes('api.whatsapp.com/send')) {
-              e.preventDefault(); // منع المتصفح من فتحه بشكل افتراضي
-              
+            if (href.includes('facebook.com/share') || href.includes('api.whatsapp.com/send') || 
+                href.includes('twitter.com/intent') || href.includes('telegram.me')) {
+              e.preventDefault();
               var title = document.title;
-              // إرسال الرابط المقصود "بالذات" لتطبيق فلاتر
               FlutterShare.postMessage(title + "|" + href);
+              return false;
+            }
+          }
+          
+          // Handle buttons with share-related attributes or text
+          if (button) {
+            var text = button.innerText || button.textContent || "";
+            var className = button.className || "";
+            if (text.includes('مشاركة') || text.includes('share') || 
+                className.includes('share') || button.getAttribute('data-share')) {
+              e.preventDefault();
+              e.stopPropagation();
+              var title = document.title;
+              var url = window.location.href;
+              FlutterShare.postMessage(title + "|" + url);
               return false;
             }
           }
         }, true);
 
-        // 2. إخفاء العناصر غير المرغوبة (تنسيق الصفحة)
+        // 3. إخفاء العناصر غير المرغوبة (تنسيق الصفحة)
         var style = document.createElement('style');
         style.innerHTML = `
           * { -webkit-scrollbar { display: none !important; } scrollbar-width: none !important; -ms-overflow-style: none !important; }
