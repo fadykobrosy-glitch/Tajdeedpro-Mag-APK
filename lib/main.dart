@@ -245,9 +245,18 @@ class _WebViewScreenState extends State<WebViewScreen> {
               e.preventDefault();
               e.stopPropagation(); // منع نقرة الزر من تفعيل البطاقة بالكامل
               
-              // سحب الرابط الصحيح من البطاقة الأب (حتى لو كانت blog-post_)
-              var parentCard = btn.closest('.featured-ad-card-link') || btn.closest('a');
-              var linkToShare = parentCard ? parentCard.href : window.location.href;
+              // سحب الرابط الصحيح من البطاقة الأب باستخدام الكلاسات المؤكدة
+              var parentCard = btn.closest('.article-card');
+              var linkToShare = '';
+              
+              if (parentCard) {
+                // استخراج الرابط من data-post-url attribute (المصدر الموثوق)
+                linkToShare = parentCard.getAttribute('data-post-url') || 
+                             parentCard.querySelector('a[href*="tajdeedpro.blogspot.com"]')?.href ||
+                             window.location.href;
+              } else {
+                linkToShare = window.location.href;
+              }
               
               // إرسال الرابط للدارت
               NativeShareChannel.postMessage(linkToShare);
