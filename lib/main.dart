@@ -185,9 +185,9 @@ class _WebViewScreenState extends State<WebViewScreen> {
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..addJavaScriptChannel(
-        'FlutterShare',
+        'NativeShareChannel',
         onMessageReceived: (JavaScriptMessage message) async {
-          await _handleWebShare(message.message);
+          await Share.share(message.message, subject: 'تجديد');
         },
       )
       ..setNavigationDelegate(
@@ -217,22 +217,20 @@ class _WebViewScreenState extends State<WebViewScreen> {
             // معالجة روابط فيسبوك حصراً
             if (url.contains('facebook.com') || url.contains('fb.me') || url.startsWith('intent://')) {
               
-              String finalUrl = url;
-
-              // إذا كان الرابط هو الـ Intent اللي بعتلي ياه، منفك تشفيره فوراً
+              // Fix Facebook Intent (White Screen Issue)
               if (url.startsWith('intent://')) {
-                RegExp regExp = RegExp(r'intent://([\s\S]*?)#Intent');
-                var match = regExp.firstMatch(url);
-                if (match != null) {
-                  finalUrl = "https://" + match.group(1)!;
-                }
+                // Use launchUrl directly with intent URL to let Android handle it
+                await launchUrl(
+                  Uri.parse(url),
+                  mode: LaunchMode.externalApplication,
+                );
+              } else {
+                // Handle regular Facebook URLs
+                await launchUrl(
+                  Uri.parse(url),
+                  mode: LaunchMode.externalApplication,
+                );
               }
-
-              // السر هون: فتح الرابط بمتصفح خارجي نظامي بيعرف يتعامل مع تطبيق فيسبوك
-              await launchUrl(
-                Uri.parse(finalUrl),
-                mode: LaunchMode.externalApplication,
-              );
               
               return NavigationDecision.prevent; // منع الـ WebView من فتح "الطبقة البيضاء"
             }
@@ -269,160 +267,30 @@ class _WebViewScreenState extends State<WebViewScreen> {
     return;
   }
 
-  Future<void> _handleWebShare(String message) async {
-    try {
-      String urlToShare = "";
-      String title = "تجديد";
-      if (message.contains('|')) {
-        final data = message.split('|');
-        title = data[0];
-        urlToShare = data[1];
-      } else {
-        urlToShare = message;
-      }
-      
-      if (urlToShare.isNotEmpty) {
-        // Check if it's a Facebook URL and handle with deep linking
-        if (urlToShare.contains('facebook.com')) {
-          final String fbScheme = "fb://facewebmodal/f?href=$urlToShare";
-          final Uri fbUri = Uri.parse(fbScheme);
-          final Uri webUri = Uri.parse(urlToShare);
-
-          try {
-            // Try to open Facebook app with deep link
-            bool launched = await launchUrl(
-              fbUri,
-              mode: LaunchMode.externalNonBrowserApplication,
-            );
-
-            // Fallback to browser if Facebook app not installed
-            if (!launched) {
-              await launchUrl(webUri, mode: LaunchMode.externalApplication);
-            }
-          } catch (e) {
-            // Final fallback to native share
-            await Share.share('$title\n$urlToShare', subject: title);
-          }
-        } else {
-          // For non-Facebook URLs, use native share
-          await Share.share('$title\n$urlToShare', subject: title);
-        }
-      }
-    } catch (e) {
-      debugPrint("Share Error: $e");
-    }
-  }
-
   void _injectCustomStyles() {
     _controller.runJavaScript('''
       (function() {
-        // 1. Override navigator.share for all share scenarios
-        window.navigator.share = function(data) {
-          const title = data.title || document.title || 'تجديد';
-          
-          // Function to extract specific post URL (same as in click handler)
-          function getSpecificPostUrl() {
-            // Method 1: Check for data-url attribute on active element
-            var activeElement = document.activeElement || document.body;
-            var dataUrl = activeElement.getAttribute('data-url') || 
-                          activeElement.getAttribute('data-post-url') || 
-                          activeElement.getAttribute('data-href');
-            if (dataUrl) return dataUrl;
-            
-            // Method 2: Find closest article/card container
-            var article = activeElement.closest('.article, .post, .card, .item');
-            if (article) {
-              var articleLink = article.querySelector('a[href*="tajdeedpro.blogspot.com"]');
-              if (articleLink) return articleLink.getAttribute('href');
-            }
-            
-            // Method 3: Look for canonical URL
-            var canonical = document.querySelector('link[rel="canonical"]');
-            if (canonical) return canonical.getAttribute('href');
-            
-            // Method 4: Fallback to current page URL with post identifier
-            var urlParams = new URLSearchParams(window.location.search);
-            var postId = urlParams.get('m') || urlParams.get('post') || urlParams.get('p');
-            if (postId) {
-              return window.location.pathname + window.location.search;
-            }
-            
-            return window.location.href;
-          }
-          
-          const url = data.url || getSpecificPostUrl();
-          FlutterShare.postMessage(title + '|' + url);
-          return Promise.resolve();
-        };
-
-        // 2. Enhanced click detection for all share button types
+        // 1. Dedicated Native Share Channel for .footer-btn.share-btn
         document.addEventListener('click', function(e) {
-          var anchor = e.target.closest('a');
-          var button = e.target.closest('button');
-          
-          // Function to extract specific post URL
-          function getSpecificPostUrl(element) {
-            // Method 1: Check for data-url attribute
-            var dataUrl = element.getAttribute('data-url') || 
-                          element.getAttribute('data-post-url') || 
-                          element.getAttribute('data-href');
-            if (dataUrl) return dataUrl;
+          var shareBtn = e.target.closest('.footer-btn.share-btn');
+          if (shareBtn) {
+            e.preventDefault();
+            e.stopPropagation();
             
-            // Method 2: Find closest article/card container and its link
-            var article = element.closest('.article, .post, .card, .item');
-            if (article) {
-              var articleLink = article.querySelector('a[href*="tajdeedpro.blogspot.com"]');
-              if (articleLink) return articleLink.getAttribute('href');
-            }
+            var href = shareBtn.getAttribute('href') || "";
+            var title = document.title;
+            var specificUrl = href || window.location.href;
             
-            // Method 3: Look for canonical URL
-            var canonical = document.querySelector('link[rel="canonical"]');
-            if (canonical) return canonical.getAttribute('href');
-            
-            // Method 4: Fallback to current page URL with specific post identifier
-            var urlParams = new URLSearchParams(window.location.search);
-            var postId = urlParams.get('m') || urlParams.get('post') || urlParams.get('p');
-            if (postId) {
-              return window.location.pathname + window.location.search;
-            }
-            
-            // Final fallback to main page
-            return window.location.href;
-          }
-          
-          // Handle anchor links with share URLs
-          if (anchor) {
-            var href = anchor.getAttribute('href') || "";
-            if (href.includes('facebook.com/share') || href.includes('api.whatsapp.com/send') || 
-                href.includes('twitter.com/intent') || href.includes('telegram.me')) {
-              e.preventDefault();
-              var title = document.title;
-              var specificUrl = getSpecificPostUrl(anchor);
-              FlutterShare.postMessage(title + "|" + specificUrl);
-              return false;
-            }
-          }
-          
-          // Handle buttons with share-related attributes or text
-          if (button) {
-            var text = button.innerText || button.textContent || "";
-            var className = button.className || "";
-            if (text.includes('مشاركة') || text.includes('share') || 
-                className.includes('share') || button.getAttribute('data-share')) {
-              e.preventDefault();
-              e.stopPropagation();
-              var title = document.title;
-              var specificUrl = getSpecificPostUrl(button);
-              FlutterShare.postMessage(title + "|" + specificUrl);
-              return false;
-            }
+            NativeShareChannel.postMessage(title + "|" + specificUrl);
+            return false;
           }
         }, true);
 
-        // 3. إخفاء العناصر غير المرغوبة (تنسيق الصفحة)
+        // 2. Scroll fix and UI cleanup
         var style = document.createElement('style');
         style.innerHTML = `
-          * { -webkit-scrollbar { display: none !important; } scrollbar-width: none !important; -ms-overflow-style: none !important; }
+          html, body { overflow: hidden !important; }
+          * { -webkit-scrollbar: { display: none !important; } scrollbar-width: none !important; -ms-overflow-style: none !important; }
           .header-widget, .footer-wrapper, .sidebar-wrapper { display: none !important; }
           #send-to-messenger-button { display: none !important; }
         `;
