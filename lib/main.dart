@@ -239,29 +239,96 @@ class _WebViewScreenState extends State<WebViewScreen> {
           `;
           document.head.appendChild(style);
 
-          // 4. تشغيل زر المشاركة بدون ما يضرب رابط بطاقة الإعلان
-          document.querySelectorAll('.footer-btn.share-btn').forEach(function(btn) {
-            btn.onclick = function(e) {
+          // 4. تشغيل زر المشاركة في الصفحة الرئيسية والمودال
+          document.addEventListener('click', function(e) {
+            const shareBtn = e.target.closest('.footer-btn.share-btn');
+            if (shareBtn) {
               e.preventDefault();
-              e.stopPropagation(); // منع نقرة الزر من تفعيل البطاقة بالكامل
+              e.stopPropagation();
               
-              // سحب الرابط الصحيح من البطاقة الأب باستخدام الكلاسات المؤكدة
-              var parentCard = btn.closest('.article-card');
-              var linkToShare = '';
+              // استخراج محسّن للرابط لجميع أنواع البطاقات
+              const parentCard = shareBtn.closest('.article-card');
+              let linkToShare = '';
               
               if (parentCard) {
-                // استخراج الرابط من data-post-url attribute (المصدر الموثوق)
-                linkToShare = parentCard.getAttribute('data-post-url') || 
-                             parentCard.querySelector('a[href*="tajdeedpro.blogspot.com"]')?.href ||
-                             window.location.href;
+                // الطريقة 1: data-post-url attribute (المصدر الأساسي)
+                linkToShare = parentCard.getAttribute('data-post-url');
+                
+                // الطريقة 2: البحث عن رابط التعليقات في المحتوى
+                if (!linkToShare) {
+                  const cardContent = parentCard.querySelector('.card-full-body');
+                  if (cardContent) {
+                    const content = cardContent.innerHTML;
+                    const regex = /<!--\s*COMMENTS:\s*(https?:\/\/[^\s--]+)\s*-->/;
+                    const match = content.match(regex);
+                    if (match && match[1]) {
+                      linkToShare = match[1];
+                    }
+                  }
+                }
+                
+                // الطريقة 3: البحث عن روابط داخل البطاقة
+                if (!linkToShare) {
+                  const linkElement = parentCard.querySelector('a[href*="tajdeedpro.blogspot.com"]');
+                  if (linkElement) {
+                    linkToShare = linkElement.href;
+                  }
+                }
+                
+                // الطريقة 4: الرجوع للرابط الحالي (آخر خيار)
+                if (!linkToShare) {
+                  linkToShare = window.location.href;
+                }
               } else {
                 linkToShare = window.location.href;
               }
               
+              console.log('🔗 Extracted share URL:', linkToShare);
+              
               // إرسال الرابط للدارت
               NativeShareChannel.postMessage(linkToShare);
-            };
+            }
           });
+
+          // 5. معالج خاص للمودال - إعادة ربط معالجات الأحداث بعد الاستنساخ
+          function attachModalShareHandlers() {
+            const modalShareBtn = document.querySelector('#modalFooterActions .footer-btn.share-btn');
+            if (modalShareBtn) {
+              console.log('🔧 Attaching modal share handler');
+              modalShareBtn.onclick = function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // الحصول على الرابط من خاصية المودال
+                const modal = document.getElementById('articleModal');
+                const linkToShare = modal.getAttribute('data-current-url') || window.location.href;
+                
+                console.log('🔗 Modal share URL:', linkToShare);
+                NativeShareChannel.postMessage(linkToShare);
+              };
+            }
+          }
+
+          // مراقبة فتح المودال لإعادة ربط المعالجات
+          const modalObserver = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+              if (mutation.type === 'childList') {
+                const modalActions = document.getElementById('modalFooterActions');
+                if (modalActions && modalActions.innerHTML.includes('share-btn')) {
+                  setTimeout(attachModalShareHandlers, 100);
+                }
+              }
+            });
+          });
+
+          // بدء مراقبة المودال
+          const modal = document.getElementById('articleModal');
+          if (modal) {
+            modalObserver.observe(document.getElementById('modalFooterActions'), {
+              childList: true,
+              subtree: true
+            });
+          }
         ''');
       },
     ),
