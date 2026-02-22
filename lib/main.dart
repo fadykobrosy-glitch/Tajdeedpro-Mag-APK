@@ -183,102 +183,87 @@ class _WebViewScreenState extends State<WebViewScreen> {
     super.initState();
     
     _controller = WebViewController()
-  ..setJavaScriptMode(JavaScriptMode.unrestricted)
-  ..setBackgroundColor(const Color(0xFF2c2c2c))
-  // قناة المشاركة الوحيدة والنظيفة
-  ..addJavaScriptChannel(
-    'NativeShareChannel',
-    onMessageReceived: (JavaScriptMessage message) {
-      Share.share(message.message);
-    },
-  )
-  ..setNavigationDelegate(
-    NavigationDelegate(
-      onNavigationRequest: (NavigationRequest request) async {
-        final url = request.url;
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF2c2c2c))
+      ..addJavaScriptChannel(
+        'NativeShareChannel',
+        onMessageReceived: (JavaScriptMessage message) {
+          Share.share(message.message);
+        },
+      )
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onProgress: (progress) {
+            setState(() {
+              _loadingProgress = progress / 100;
+              _isLoading = progress < 100;
+            });
+          },
+          onNavigationRequest: (NavigationRequest request) async {
+            final url = request.url;
 
-        // 1. الحل الجذري والنهائي لروابط فيسبوك (Intent) والشاشة البيضاء
-        if (url.startsWith('intent://')) {
-          try {
-            // تفكيك الرابط لنص، استبدال intent بـ https، وحذف كود الأندرويد اللي بيعمل كراش
-            String cleanUrl = url.replaceFirst('intent://', 'https://').split('#Intent')[0];
-            await launchUrl(Uri.parse(cleanUrl), mode: LaunchMode.externalApplication);
-          } catch (e) {
-            debugPrint('Error launching Facebook: $e');
-          }
-          return NavigationDecision.prevent; // منع الشاشة البيضاء نهائياً
-        }
-
-        // 2. معالجة أي تطبيق خارجي تاني (واتساب، تيليجرام...)
-        if (!url.startsWith('http') && !url.startsWith('https')) {
-          try {
-            await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-          } catch (e) {
-            debugPrint('Error launching External App: $e');
-          }
-          return NavigationDecision.prevent;
-        }
-
-        // السماح بالتنقل الطبيعي داخل الموقع
-        return NavigationDecision.navigate;
-      },
-      onPageFinished: (String url) {
-        // 3. الحل النهائي للسكرول والمشاركة (بدون خنق الصفحة)
-        _controller.runJavaScript('''
-          // حقن ستايل نظيف جداً: بيخفي الهيدر والفوتير والمسطرة، بس بيترك السكرول شغال
-          var style = document.createElement('style');
-          style.innerHTML = `
-            ::-webkit-scrollbar { display: none !important; }
-            html, body {
-              -ms-overflow-style: none !important;
-              scrollbar-width: none !important;
-              /* ممنوع استخدام overflow: hidden هون أبداً */
-            }
-            /* إذا في كلاسات بدك تخفيها متل الهيدر ضيفها هون، مثال: */
-            .header-widget, .footer-widget { display: none !important; }
-          `;
-          document.head.appendChild(style);
-
-          // 4. تشغيل زر المشاركة بدون ما يضرب رابط بطاقة الإعلان
-          document.querySelectorAll('.footer-btn.share-btn').forEach(function(btn) {
-            btn.onclick = function(e) {
-              e.preventDefault();
-              e.stopPropagation(); // منع نقرة الزر من تفعيل البطاقة بالكامل
-              
-              // سحب الرابط الصحيح من البطاقة الأب باستخدام الكلاسات المؤكدة
-              var parentCard = btn.closest('.article-card');
-              var linkToShare = '';
-              
-              if (parentCard) {
-                // استخراج الرابط من data-post-url attribute (المصدر الموثوق)
-                linkToShare = parentCard.getAttribute('data-post-url') || 
-                             parentCard.querySelector('a[href*="tajdeedpro.blogspot.com"]')?.href ||
-                             window.location.href;
-              } else {
-                linkToShare = window.location.href;
+            // إصلاح الواتساب والروابط الخارجية - الفتح الخارجي فوراً
+            if (url.contains("whatsapp.com") || url.startsWith("whatsapp:") || 
+                url.startsWith("intent://") || (!url.startsWith('http') && !url.startsWith('https'))) {
+              try {
+                String finalUrl = url;
+                if (url.startsWith('intent://')) {
+                  finalUrl = url.replaceFirst('intent://', 'https://').split('#Intent')[0];
+                }
+                await launchUrl(Uri.parse(finalUrl), mode: LaunchMode.externalApplication);
+                return NavigationDecision.prevent;
+              } catch (e) {
+                debugPrint('External launch error: $e');
               }
-              
-              // إرسال الرابط للدارت
-              NativeShareChannel.postMessage(linkToShare);
-            };
-          });
-        ''');
-      },
-    ),
-  )
-  ..loadRequest(Uri.parse('https://tajdeedpro.blogspot.com/'));
-  }
+            }
+            return NavigationDecision.navigate;
+          },
+          onPageFinished: (String url) {
+            _controller.runJavaScript('''
+              // 1. تنظيف السكرول والواجهة
+              var style = document.createElement('style');
+              style.innerHTML = `
+                ::-webkit-scrollbar { display: none !important; }
+                html, body { -ms-overflow-style: none !important; scrollbar-width: none !important; }
+                .header-widget, .footer-widget { display: none !important; }
+              `;
+              document.head.appendChild(style);
 
-  Future<void> _launchExternalURL(String url) async {
-    final uri = Uri.parse(url);
-    
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(
-        uri,
-        mode: LaunchMode.externalApplication,
-      );
-    }
-    return;
+              // 2. وظيفة استخراج الرابط الذكية (للبطاقة والمودال)
+              function getLink(element) {
+                // البحث في البطاقة (حتى لو بدون صورة)
+                var card = element.closest('.article-card');
+                if (card && card.getAttribute('data-post-url')) {
+                  return card.getAttribute('data-post-url');
+                }
+                // البحث في المودال
+                var modal = document.getElementById('articleModal');
+                if (modal && modal.style.display !== 'none') {
+                  return modal.getAttribute('data-current-url') || window.location.href;
+                }
+                // البحث عن أول رابط داخل البطاقة
+                if (card) {
+                  var link = card.querySelector('a');
+                  if (link) return link.href;
+                }
+                return window.location.href;
+              }
+
+              // 3. التنصت على أي نقرة مشاركة (رئيسية أو مودال)
+              document.addEventListener('click', function(e) {
+                var btn = e.target.closest('.share-btn');
+                if (btn) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  var link = getLink(btn);
+                  NativeShareChannel.postMessage(link);
+                }
+              }, true);
+            ''');
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse('https://tajdeedpro.blogspot.com/'));
   }
 
   Future<void> _refreshWebView() async {
@@ -305,6 +290,7 @@ class _WebViewScreenState extends State<WebViewScreen> {
             // Full-screen WebView with RefreshIndicator
             SafeArea(
               child: RefreshIndicator(
+                key: _refreshIndicatorKey,
                 onRefresh: _refreshWebView,
                 color: const Color(0xFFfb6d0e),
                 backgroundColor: const Color(0xFF2c2c2c),
