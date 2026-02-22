@@ -183,76 +183,81 @@ class _WebViewScreenState extends State<WebViewScreen> {
     super.initState();
     
     _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..addJavaScriptChannel(
-        'NativeShareChannel',
-        onMessageReceived: (JavaScriptMessage message) async {
-          await Share.share(message.message, subject: 'تجديد');
-        },
-      )
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onProgress: (int progress) {
-            setState(() {
-              _loadingProgress = progress / 100.0;
-            });
-          },
-          onPageStarted: (String url) {
-            setState(() {
-              _isLoading = true;
-              _loadingProgress = 0.0;
-            });
-          },
-          onPageFinished: (String url) {
-            setState(() {
-              _isLoading = false;
-            });
-            
-            _injectCustomStyles();
-          },
-          onWebResourceError: (WebResourceError error) {},
-          onNavigationRequest: (NavigationRequest request) async {
-            final url = request.url; // شلنا الـ toLowerCase عشان ما يخرب الروابط الحساسة
+  ..setJavaScriptMode(JavaScriptMode.unrestricted)
+  ..setBackgroundColor(const Color(0xFF2c2c2c))
+  // قناة المشاركة الوحيدة والنظيفة
+  ..addJavaScriptChannel(
+    'NativeShareChannel',
+    onMessageReceived: (JavaScriptMessage message) {
+      Share.share(message.message);
+    },
+  )
+  ..setNavigationDelegate(
+    NavigationDelegate(
+      onNavigationRequest: (NavigationRequest request) async {
+        final url = request.url;
 
-            // معالجة روابط فيسبوك حصراً
-            if (url.contains('facebook.com') || url.contains('fb.me') || url.startsWith('intent://')) {
-              
-              // Fix Facebook Intent (White Screen Issue)
-              if (url.startsWith('intent://')) {
-                // Use launchUrl directly with intent URL to let Android handle it
-                await launchUrl(
-                  Uri.parse(url),
-                  mode: LaunchMode.externalApplication,
-                );
-              } else {
-                // Handle regular Facebook URLs
-                await launchUrl(
-                  Uri.parse(url),
-                  mode: LaunchMode.externalApplication,
-                );
-              }
-              
-              return NavigationDecision.prevent; // منع الـ WebView من فتح "الطبقة البيضاء"
-            }
+        // 1. الحل الجذري والنهائي لروابط فيسبوك (Intent) والشاشة البيضاء
+        if (url.startsWith('intent://')) {
+          try {
+            // تفكيك الرابط لنص، استبدال intent بـ https، وحذف كود الأندرويد اللي بيعمل كراش
+            String cleanUrl = url.replaceFirst('intent://', 'https://').split('#Intent')[0];
+            await launchUrl(Uri.parse(cleanUrl), mode: LaunchMode.externalApplication);
+          } catch (e) {
+            debugPrint('Error launching Facebook: $e');
+          }
+          return NavigationDecision.prevent; // منع الشاشة البيضاء نهائياً
+        }
 
-            // معالجة الواتساب والاتصال
-            if (url.contains('api.whatsapp.com') || url.contains('wa.me') || url.startsWith('tel:')) {
-              await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-              return NavigationDecision.prevent;
-            }
-
-            // السماح بتصفح المدونة فقط داخل التطبيق
-            if (url.contains('tajdeedpro.blogspot.com')) {
-              return NavigationDecision.navigate;
-            }
-
-            // أي رابط خارجي تاني يفتحه بره
+        // 2. معالجة أي تطبيق خارجي تاني (واتساب، تيليجرام...)
+        if (!url.startsWith('http') && !url.startsWith('https')) {
+          try {
             await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-            return NavigationDecision.prevent;
-          },
-        ),
-      )
-      ..loadRequest(Uri.parse('https://tajdeedpro.blogspot.com/'));
+          } catch (e) {
+            debugPrint('Error launching External App: $e');
+          }
+          return NavigationDecision.prevent;
+        }
+
+        // السماح بالتنقل الطبيعي داخل الموقع
+        return NavigationDecision.navigate;
+      },
+      onPageFinished: (String url) {
+        // 3. الحل النهائي للسكرول والمشاركة (بدون خنق الصفحة)
+        _controller.runJavaScript('''
+          // حقن ستايل نظيف جداً: بيخفي الهيدر والفوتير والمسطرة، بس بيترك السكرول شغال
+          var style = document.createElement('style');
+          style.innerHTML = `
+            ::-webkit-scrollbar { display: none !important; }
+            html, body {
+              -ms-overflow-style: none !important;
+              scrollbar-width: none !important;
+              /* ممنوع استخدام overflow: hidden هون أبداً */
+            }
+            /* إذا في كلاسات بدك تخفيها متل الهيدر ضيفها هون، مثال: */
+            .header-widget, .footer-widget { display: none !important; }
+          `;
+          document.head.appendChild(style);
+
+          // 4. تشغيل زر المشاركة بدون ما يضرب رابط بطاقة الإعلان
+          document.querySelectorAll('.footer-btn.share-btn').forEach(function(btn) {
+            btn.onclick = function(e) {
+              e.preventDefault();
+              e.stopPropagation(); // منع نقرة الزر من تفعيل البطاقة بالكامل
+              
+              // سحب الرابط الصحيح من البطاقة الأب (حتى لو كانت blog-post_)
+              var parentCard = btn.closest('.featured-ad-card-link') || btn.closest('a');
+              var linkToShare = parentCard ? parentCard.href : window.location.href;
+              
+              // إرسال الرابط للدارت
+              NativeShareChannel.postMessage(linkToShare);
+            };
+          });
+        ''');
+      },
+    ),
+  )
+  ..loadRequest(Uri.parse('https://tajdeedpro.blogspot.com/'));
   }
 
   Future<void> _launchExternalURL(String url) async {
@@ -265,80 +270,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
       );
     }
     return;
-  }
-
-  void _injectCustomStyles() {
-    _controller.runJavaScript('''
-      (function() {
-        // 1. Featured Ad Card Navigation - Handle card clicks
-        document.addEventListener('click', function(e) {
-          var cardLink = e.target.closest('.featured-ad-card-link');
-          if (cardLink) {
-            // Skip if share icon was clicked (handled separately)
-            if (e.target.closest('.share-icon, .share-btn, [class*="share"]')) return;
-            
-            e.preventDefault();
-            var href = cardLink.getAttribute('href') || "";
-            if (href) {
-              // Force WebView to load the URL to prevent ?m=1 reset
-              window.location.href = href;
-            }
-            return false;
-          }
-        }, true);
-
-        // 2. Share Icon Listener - Handle share clicks with stopPropagation
-        document.addEventListener('click', function(e) {
-          var shareIcon = e.target.closest('.share-icon, .share-btn, [class*="share"]');
-          if (shareIcon) {
-            e.preventDefault();
-            e.stopPropagation(); // Prevent card navigation
-            
-            var href = shareIcon.getAttribute('href') || "";
-            var title = document.title;
-            var specificUrl = href || window.location.href;
-            
-            NativeShareChannel.postMessage(title + "|" + specificUrl);
-            return false;
-          }
-        }, true);
-
-        // 3. Footer Share Button Listener (existing functionality)
-        document.addEventListener('click', function(e) {
-          var shareBtn = e.target.closest('.footer-btn.share-btn');
-          if (shareBtn) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            var href = shareBtn.getAttribute('href') || "";
-            var title = document.title;
-            var specificUrl = href || window.location.href;
-            
-            NativeShareChannel.postMessage(title + "|" + specificUrl);
-            return false;
-          }
-        }, true);
-
-        // 4. Scroll fix and UI cleanup
-        var style = document.createElement('style');
-        style.innerHTML = `
-          /* Hide scrollbar for Chrome, Safari and Opera */
-          ::-webkit-scrollbar {
-            display: none !important;
-          }
-          /* Hide scrollbar for IE, Edge and Firefox */
-          html, body {
-            -ms-overflow-style: none !important;  /* IE and Edge */
-            scrollbar-width: none !important;  /* Firefox */
-            overflow-y: scroll !important; /* Force scrolling capability */
-            -webkit-overflow-scrolling: touch !important; /* Smooth scrolling for mobile */
-          }
-          .header-widget, .footer-wrapper, .sidebar-wrapper { display: none !important; }
-          #send-to-messenger-button { display: none !important; }
-        `;
-        document.head.appendChild(style);
-      })();
-    ''');
   }
 
   Future<void> _refreshWebView() async {
