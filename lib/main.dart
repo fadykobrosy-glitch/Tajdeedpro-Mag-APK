@@ -319,7 +319,38 @@ class _WebViewScreenState extends State<WebViewScreen> {
         // 1. Override navigator.share for all share scenarios
         window.navigator.share = function(data) {
           const title = data.title || document.title || 'تجديد';
-          const url = data.url || window.location.href;
+          
+          // Function to extract specific post URL (same as in click handler)
+          function getSpecificPostUrl() {
+            // Method 1: Check for data-url attribute on active element
+            var activeElement = document.activeElement || document.body;
+            var dataUrl = activeElement.getAttribute('data-url') || 
+                          activeElement.getAttribute('data-post-url') || 
+                          activeElement.getAttribute('data-href');
+            if (dataUrl) return dataUrl;
+            
+            // Method 2: Find closest article/card container
+            var article = activeElement.closest('.article, .post, .card, .item');
+            if (article) {
+              var articleLink = article.querySelector('a[href*="tajdeedpro.blogspot.com"]');
+              if (articleLink) return articleLink.getAttribute('href');
+            }
+            
+            // Method 3: Look for canonical URL
+            var canonical = document.querySelector('link[rel="canonical"]');
+            if (canonical) return canonical.getAttribute('href');
+            
+            // Method 4: Fallback to current page URL with post identifier
+            var urlParams = new URLSearchParams(window.location.search);
+            var postId = urlParams.get('m') || urlParams.get('post') || urlParams.get('p');
+            if (postId) {
+              return window.location.pathname + window.location.search;
+            }
+            
+            return window.location.href;
+          }
+          
+          const url = data.url || getSpecificPostUrl();
           FlutterShare.postMessage(title + '|' + url);
           return Promise.resolve();
         };
@@ -329,6 +360,36 @@ class _WebViewScreenState extends State<WebViewScreen> {
           var anchor = e.target.closest('a');
           var button = e.target.closest('button');
           
+          // Function to extract specific post URL
+          function getSpecificPostUrl(element) {
+            // Method 1: Check for data-url attribute
+            var dataUrl = element.getAttribute('data-url') || 
+                          element.getAttribute('data-post-url') || 
+                          element.getAttribute('data-href');
+            if (dataUrl) return dataUrl;
+            
+            // Method 2: Find closest article/card container and its link
+            var article = element.closest('.article, .post, .card, .item');
+            if (article) {
+              var articleLink = article.querySelector('a[href*="tajdeedpro.blogspot.com"]');
+              if (articleLink) return articleLink.getAttribute('href');
+            }
+            
+            // Method 3: Look for canonical URL
+            var canonical = document.querySelector('link[rel="canonical"]');
+            if (canonical) return canonical.getAttribute('href');
+            
+            // Method 4: Fallback to current page URL with specific post identifier
+            var urlParams = new URLSearchParams(window.location.search);
+            var postId = urlParams.get('m') || urlParams.get('post') || urlParams.get('p');
+            if (postId) {
+              return window.location.pathname + window.location.search;
+            }
+            
+            // Final fallback to main page
+            return window.location.href;
+          }
+          
           // Handle anchor links with share URLs
           if (anchor) {
             var href = anchor.getAttribute('href') || "";
@@ -336,7 +397,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
                 href.includes('twitter.com/intent') || href.includes('telegram.me')) {
               e.preventDefault();
               var title = document.title;
-              FlutterShare.postMessage(title + "|" + href);
+              var specificUrl = getSpecificPostUrl(anchor);
+              FlutterShare.postMessage(title + "|" + specificUrl);
               return false;
             }
           }
@@ -350,8 +412,8 @@ class _WebViewScreenState extends State<WebViewScreen> {
               e.preventDefault();
               e.stopPropagation();
               var title = document.title;
-              var url = window.location.href;
-              FlutterShare.postMessage(title + "|" + url);
+              var specificUrl = getSpecificPostUrl(button);
+              FlutterShare.postMessage(title + "|" + specificUrl);
               return false;
             }
           }
